@@ -35,9 +35,7 @@
 //! | `Vec<u8>`                       | MySql bytes                                               |
 //! | `String`                        | MySql bytes parsed as utf8                                |
 //! | `Duration` (`std` and `time`)   | MySql time or bytes parsed as MySql time string           |
-//! | `time::PrimitiveDateTime`       | MySql date or bytes parsed as MySql date string           |
-//! | `time::Date`                    | MySql date or bytes parsed as MySql date string           |
-//! | `time::Time`                    | MySql date or bytes parsed as MySql date string           |
+//! | `time::Timespec`                | MySql date or bytes parsed as MySql date string           |
 //! | `chrono::NaiveTime`             | MySql date or bytes parsed as MySql date string           |
 //! | `chrono::NaiveDate`             | MySql date or bytes parsed as MySql date string           |
 //! | `chrono::NaiveDateTime`         | MySql date or bytes parsed as MySql date string           |
@@ -52,13 +50,14 @@
 //! [1]: https://dev.mysql.com/doc/internals/en/binary-protocol-value.html
 #![cfg_attr(feature = "nightly", feature(test, const_fn))]
 
-#[macro_use]
-extern crate bitflags;
-#[macro_use]
-extern crate lazy_static;
+#[cfg(all(not(feature = "test"), test))]
+compile_error!("Please invoke `cargo test` with `--features test` flags");
+
 #[cfg(feature = "nightly")]
 extern crate test;
 
+#[macro_use]
+pub mod bitflags_ext;
 pub use bigdecimal;
 pub use chrono;
 pub use num_bigint;
@@ -80,62 +79,81 @@ pub use uuid;
 #[macro_export]
 macro_rules! params {
     () => {};
-    (@to_pair $map:expr, $name:expr => $value:expr) => (
-        let entry = $map.entry(std::string::String::from($name));
-        if let std::collections::hash_map::Entry::Occupied(_) = entry {
-            panic!("Redefinition of named parameter `{}'", entry.key());
-        } else {
-            entry.or_insert($crate::value::Value::from($value));
-        }
+    (@to_pair $name:expr => $value:expr) => (
+        (std::string::String::from($name), $crate::value::Value::from($value))
     );
-    (@to_pair $map:expr, $name:ident) => (
-        let entry = $map.entry(std::string::String::from(stringify!($name)));
-        if let std::collections::hash_map::Entry::Occupied(_) = entry {
-            panic!("Redefinition of named parameter `{}'", entry.key());
-        } else {
-            entry.or_insert($crate::value::Value::from($name));
-        }
+    (@to_pair $name:ident) => (
+        (std::string::String::from(stringify!($name)), $crate::value::Value::from($name))
     );
-    (@expand $map:expr;) => {};
-    (@expand $map:expr; $name:expr => $value:expr, $($tail:tt)*) => {
-        params!(@to_pair $map, $name => $value);
-        params!(@expand $map; $($tail)*);
+    (@expand $vec:expr;) => {};
+    (@expand $vec:expr; $name:expr => $value:expr, $($tail:tt)*) => {
+        $vec.push(params!(@to_pair $name => $value));
+        params!(@expand $vec; $($tail)*);
     };
-    (@expand $map:expr; $name:expr => $value:expr $(, $tail:tt)*) => {
-        params!(@to_pair $map, $name => $value);
-        params!(@expand $map; $($tail)*);
+    (@expand $vec:expr; $name:expr => $value:expr $(, $tail:tt)*) => {
+        $vec.push(params!(@to_pair $name => $value));
+        params!(@expand $vec; $($tail)*);
     };
-    (@expand $map:expr; $name:ident, $($tail:tt)*) => {
-        params!(@to_pair $map, $name);
-        params!(@expand $map; $($tail)*);
+    (@expand $vec:expr; $name:ident, $($tail:tt)*) => {
+        $vec.push(params!(@to_pair $name));
+        params!(@expand $vec; $($tail)*);
     };
-    (@expand $map:expr; $name:ident $(, $tail:tt)*) => {
-        params!(@to_pair $map, $name);
-        params!(@expand $map; $($tail)*);
+    (@expand $vec:expr; $name:ident $(, $tail:tt)*) => {
+        $vec.push(params!(@to_pair $name));
+        params!(@expand $vec; $($tail)*);
     };
     ($i:ident, $($tail:tt)*) => {
         {
-            let mut map: std::collections::HashMap<std::string::String, $crate::value::Value, _> = std::default::Default::default();
-            params!(@expand (&mut map); $i, $($tail)*);
-            $crate::params::Params::Named(map)
+            let mut output = std::vec::Vec::new();
+            params!(@expand output; $i, $($tail)*);
+            output
         }
     };
     ($i:expr => $($tail:tt)*) => {
         {
-            let mut map: std::collections::HashMap<std::string::String, $crate::value::Value, _> = std::default::Default::default();
-            params!(@expand (&mut map); $i => $($tail)*);
-            $crate::params::Params::Named(map)
+            let mut output = std::vec::Vec::new();
+            params!(@expand output; $i => $($tail)*);
+            output
         }
     };
     ($i:ident) => {
         {
-            let mut map: std::collections::HashMap<std::string::String, $crate::value::Value, _> = std::default::Default::default();
-            params!(@expand (&mut map); $i);
-            $crate::params::Params::Named(map)
+            let mut output = std::vec::Vec::new();
+            params!(@expand output; $i);
+            output
         }
     }
 }
 
+/// Non panicking Slice::split_at
+macro_rules! split_at_or_err {
+    ($reader:expr, $at:expr, $msg:expr) => {
+        if $reader.len() >= $at {
+            Ok($reader.split_at($at))
+        } else {
+            Err(io::Error::new(io::ErrorKind::UnexpectedEof, $msg))
+        }
+    };
+}
+
+/// Reads MySql's length-encoded string
+#[macro_export]
+macro_rules! read_lenenc_str {
+    ($reader:expr) => {{
+        let reader = $reader;
+        reader.read_lenenc_int().and_then(|len| {
+            let (value, rest) = split_at_or_err!(
+                reader,
+                len as usize,
+                "EOF while reading length-encoded string"
+            )?;
+            *reader = rest;
+            Ok(value)
+        })
+    }};
+}
+
+pub mod binlog;
 pub mod constants;
 pub mod crypto;
 pub mod io;
@@ -152,79 +170,70 @@ pub mod value;
 #[cfg(test)]
 #[test]
 fn params_macro_test() {
-    use crate::{params::Params, value::Value};
+    use crate::value::Value;
 
     let foo = 42;
     let bar = "bar";
 
+    assert_eq!(vec![(String::from("foo"), Value::Int(42))], params! { foo });
     assert_eq!(
-        Params::from(vec![(String::from("foo"), Value::Int(42))]),
-        params! { foo }
-    );
-    assert_eq!(
-        Params::from(vec![(String::from("foo"), Value::Int(42))]),
+        vec![(String::from("foo"), Value::Int(42))],
         params! { foo, }
     );
     assert_eq!(
-        Params::from(vec![
+        vec![
             (String::from("foo"), Value::Int(42)),
             (String::from("bar"), Value::Bytes((&b"bar"[..]).into())),
-        ]),
+        ],
         params! { foo, bar }
     );
     assert_eq!(
-        Params::from(vec![
+        vec![
             (String::from("foo"), Value::Int(42)),
             (String::from("bar"), Value::Bytes((&b"bar"[..]).into())),
-        ]),
+        ],
         params! { foo, bar, }
     );
     assert_eq!(
-        Params::from(vec![
+        vec![
             (String::from("foo"), Value::Int(42)),
             (String::from("bar"), Value::Bytes((&b"bar"[..]).into())),
-        ]),
+        ],
         params! { "foo" => foo, "bar" => bar }
     );
     assert_eq!(
-        Params::from(vec![
+        vec![
             (String::from("foo"), Value::Int(42)),
             (String::from("bar"), Value::Bytes((&b"bar"[..]).into())),
-        ]),
+        ],
         params! { "foo" => foo, "bar" => bar, }
     );
     assert_eq!(
-        Params::from(vec![
+        vec![
             (String::from("foo"), Value::Int(42)),
             (String::from("bar"), Value::Bytes((&b"bar"[..]).into())),
-        ]),
+        ],
         params! { foo, "bar" => bar }
     );
     assert_eq!(
-        Params::from(vec![
+        vec![
             (String::from("foo"), Value::Int(42)),
             (String::from("bar"), Value::Bytes((&b"bar"[..]).into())),
-        ]),
+        ],
         params! { "foo" => foo, bar }
     );
     assert_eq!(
-        Params::from(vec![
+        vec![
             (String::from("foo"), Value::Int(42)),
             (String::from("bar"), Value::Bytes((&b"bar"[..]).into())),
-        ]),
+        ],
         params! { foo, "bar" => bar, }
     );
     assert_eq!(
-        Params::from(vec![
+        vec![
             (String::from("foo"), Value::Int(42)),
             (String::from("bar"), Value::Bytes((&b"bar"[..]).into())),
-        ]),
+        ],
         params! { "foo" => foo, bar, }
     );
-}
-
-#[test]
-#[should_panic(expected = "Redefinition of named parameter `a'")]
-fn params_macro_should_panic_on_named_param_redefinition() {
-    params! {"a" => 1, "b" => 2, "a" => 3};
 }

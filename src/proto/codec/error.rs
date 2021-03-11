@@ -6,42 +6,24 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use std::{fmt, io};
+use failure::Fail;
 
-#[derive(Debug)]
+use std::io;
+
+#[derive(Debug, Fail)]
 pub enum PacketCodecError {
-    Io(io::Error),
+    #[fail(display = "IO error: `{}'", _0)]
+    Io(#[cause] io::Error),
+    #[fail(display = "Packet is larger than max_allowed_packet")]
     PacketTooLarge,
+    #[fail(display = "Packets out of sync")]
     PacketsOutOfSync,
+    #[fail(display = "Bad compressed packet header")]
     BadCompressedPacketHeader,
 }
 
 impl From<io::Error> for PacketCodecError {
     fn from(io_err: io::Error) -> Self {
         Self::Io(io_err)
-    }
-}
-
-impl fmt::Display for PacketCodecError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            PacketCodecError::Io(io_err) => f.write_fmt(format_args!("IO error: `{}'", io_err)),
-            PacketCodecError::PacketTooLarge => {
-                f.write_str("Packet is larger than max_allowed_packet")
-            }
-            PacketCodecError::PacketsOutOfSync => f.write_str("Packets out of sync"),
-            PacketCodecError::BadCompressedPacketHeader => {
-                f.write_str("Bad compressed packet header")
-            }
-        }
-    }
-}
-
-impl std::error::Error for PacketCodecError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            PacketCodecError::Io(io_err) => Some(io_err),
-            _other => None,
-        }
     }
 }

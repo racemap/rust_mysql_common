@@ -8,43 +8,53 @@ documentation = "https://docs.rs/mysql_common"
 repository = "https://github.com/blackbeam/rust_mysql_common"
 keywords = ["mysql", "database"]
 categories = ["database"]
-version = "0.26.0"
+version = "0.22.0"
 edition = "2018"
+exclude = ["/lib", "/proptest-regressions", "/test-data", "/wrapper.cc", "/wrapper.hh"]
 
 [badges]
 travis-ci = { repository = "blackbeam/rust_mysql_common" }
 
 [dependencies]
-base64 = "0.13"
-bigdecimal = { version = "0.2", features = ["serde"] }
+base64 = "0.12"
+bigdecimal = { version = "0.1", features = ["serde"] }
 bitflags = "1"
+bitvec = "0.17.4"
 byteorder = "1"
-bytes = "1.0"
-chrono = { version = "0.4.19", features = ["serde"] }
+bytes = "0.5.2"
+chrono = { version = "0.4", features = ["serde"] }
+crc32fast = "1.2"
+failure = "0.1.5"
 flate2 = { version = "1.0", default-features = false }
 lazy_static = "1"
 lexical = "5.2"
-num-bigint = { version = "0.3" }
+num-bigint = { version = "0.2", features = ["i128"] }
 num-traits = { version = "0.2", features = ["i128"] }
-rand = "0.8.3"
+rand = "0.7"
 regex = "1"
 rust_decimal = "1.0"
 sha1 = "0.6"
-sha2 = "0.9"
-smallvec = { version = "1.6.1", features = ["union", "write"] }
-thiserror = "1.0.24"
+sha2 = "0.8"
 time = { version = "0.2", default-features = false, features = ["std"] }
 twox-hash = "1"
 uuid = "0.8"
+saturating = "0.1"
 serde = "1"
 serde_json = "1"
 
 [dev-dependencies]
-proptest = "1.0"
+proptest = "0.9.2"
+
+[build-dependencies]
+bindgen = "0.54.0"
+cc = "1.0.54"
+cmake = "0.1.44"
+subprocess = "0.2.4"
 
 [profile.bench]
 debug = true
 
 [features]
 default = ["flate2/zlib"]
-nightly = []
+test = []
+nightly = ["test"]

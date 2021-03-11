@@ -1,0 +1,18 @@
+language: rust
+cache: cargo
+
+rust:
+  - stable
+  - beta
+  - nightly
+
+env:
+  - RUST_BACKTRACE=full
+
+before_script:
+  - export PATH="$PATH:$HOME/.cargo/bin"
+  - rustup component add rustfmt
+
+script:
+  - cargo test --features test
+  - cargo fmt -- --check

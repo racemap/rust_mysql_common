@@ -1,5 +1,3 @@
-[![Gitter](https://badges.gitter.im/rust-mysql/community.svg)](https://gitter.im/rust-mysql/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
-
 [![Crates.io](https://img.shields.io/crates/v/mysql_common.svg)](https://crates.io/crates/cargo-readme)
 [![Docs.rs](https://docs.rs/mysql_common/badge.svg)](https://docs.rs/mysql_common)
 [![Build Status](https://travis-ci.org/blackbeam/rust_mysql_common.svg?branch=master)](https://travis-ci.org/blackbeam/rust_mysql_common)
@@ -35,6 +33,7 @@ column and protocol type correspondence:
 | `Vec<u8>`                       | MySql bytes                                               |
 | `String`                        | MySql bytes parsed as utf8                                |
 | `Duration` (`std` and `time`)   | MySql time or bytes parsed as MySql time string           |
+| `time::OffsetDateTime`          | MySql date or bytes parsed as MySql date string           |
 | `time::PrimitiveDateTime`       | MySql date or bytes parsed as MySql date string           |
 | `time::Date`                    | MySql date or bytes parsed as MySql date string           |
 | `time::Time`                    | MySql date or bytes parsed as MySql date string           |

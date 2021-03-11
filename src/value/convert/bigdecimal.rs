@@ -8,8 +8,6 @@
 
 //! This module implements conversion from/to `Value` for `BigDecimal` type.
 
-use std::convert::TryInto;
-
 use bigdecimal::BigDecimal;
 
 use super::{ConvIr, FromValue, FromValueError, ParseIr, Value};
@@ -27,11 +25,11 @@ impl ConvIr<BigDecimal> for ParseIr<BigDecimal> {
             }),
             Value::Float(x) => Ok(ParseIr {
                 value: Value::Float(x),
-                output: x.try_into().map_err(|_| FromValueError(Value::Float(x)))?,
+                output: x.into(),
             }),
             Value::Double(x) => Ok(ParseIr {
                 value: Value::Double(x),
-                output: x.try_into().map_err(|_| FromValueError(Value::Double(x)))?,
+                output: x.into(),
             }),
             Value::Bytes(bytes) => match BigDecimal::parse_bytes(&*bytes, 10) {
                 Some(x) => Ok(ParseIr {

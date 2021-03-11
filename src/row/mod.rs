@@ -7,16 +7,13 @@
 // modified, or distributed except according to those terms.
 
 use crate::{
-    io::ParseBuf,
-    misc::unexpected_buf_eof,
-    packets::{Column, NullBitmap},
-    proto::{Binary, MyDeserialize, Text},
+    packets::Column,
     value::{
         convert::{from_value, from_value_opt, FromValue, FromValueError},
-        SerializationSide, Value, ValueRepr,
+        Value,
     },
 };
-use std::{borrow::Cow, fmt, io, marker::PhantomData, ops::Index, sync::Arc};
+use std::{fmt, ops::Index, sync::Arc};
 
 pub mod convert;
 
@@ -28,7 +25,7 @@ pub mod convert;
 #[derive(Clone, PartialEq)]
 pub struct Row {
     values: Vec<Option<Value>>,
-    columns: Arc<[Column]>,
+    columns: Arc<[Column<'static>]>,
 }
 
 impl fmt::Debug for Row {
@@ -49,7 +46,7 @@ impl fmt::Debug for Row {
 }
 
 /// Creates `Row` from values and columns.
-pub fn new_row(values: Vec<Value>, columns: Arc<[Column]>) -> Row {
+pub fn new_row(values: Vec<Value>, columns: Arc<[Column<'static>]>) -> Row {
     assert!(values.len() == columns.len());
     Row {
         values: values.into_iter().map(Some).collect::<Vec<_>>(),
@@ -61,11 +58,6 @@ impl Row {
     /// Returns length of a row.
     pub fn len(&self) -> usize {
         self.values.len()
-    }
-
-    /// Returns true if the row has a length of 0.
-    pub fn is_empty(&self) -> bool {
-        self.values.is_empty()
     }
 
     /// Returns columns of this row.
@@ -113,7 +105,7 @@ impl Row {
             .idx(&*self.columns)
             .and_then(|idx| self.values.get(idx))
             .and_then(|x| x.as_ref())
-            .map(|x| from_value_opt::<T>(x.clone()))
+            .and_then(|x| Some(from_value_opt::<T>(x.clone())))
     }
 
     /// Will take value of a column with index `index` if it exists and wasn't taken earlier then
@@ -143,7 +135,7 @@ impl Row {
             .idx(&*self.columns)
             .and_then(|idx| self.values.get_mut(idx))
             .and_then(|x| x.take())
-            .map(from_value_opt::<T>)
+            .and_then(|x| Some(from_value_opt::<T>(x)))
     }
 
     /// Unwraps values of a row.
@@ -208,58 +200,5 @@ impl<'a> ColumnIndex for &'a str {
             }
         }
         None
-    }
-}
-
-/// Row deserializer.
-///
-/// `S` – serialization side (see [`SerializationSide`]);
-/// `P` – protocol.
-#[derive(Debug, Clone, PartialEq)]
-pub struct RowDeserializer<S, P>(Row, PhantomData<(S, P)>);
-
-impl<S, P> From<RowDeserializer<S, P>> for Row {
-    fn from(x: RowDeserializer<S, P>) -> Self {
-        x.0
-    }
-}
-
-impl<'de, T> MyDeserialize<'de> for RowDeserializer<T, Text> {
-    type Ctx = Arc<[Column]>;
-
-    fn deserialize(columns: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        let mut values = Vec::with_capacity(columns.len());
-
-        for _ in 0..columns.len() {
-            values.push(Some(Value::deserialize(ValueRepr::Text, &mut *buf)?))
-        }
-
-        Ok(Self(Row { values, columns }, PhantomData))
-    }
-}
-
-impl<'de, S: SerializationSide> MyDeserialize<'de> for RowDeserializer<S, Binary> {
-    type Ctx = Arc<[Column]>;
-
-    fn deserialize(columns: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        use Value::*;
-
-        buf.checked_eat_u8().ok_or_else(unexpected_buf_eof)?;
-
-        let bitmap = NullBitmap::<S, Cow<'de, [u8]>>::deserialize(columns.len(), &mut *buf)?;
-        let mut values = Vec::with_capacity(columns.len());
-
-        for (i, column) in columns.iter().enumerate() {
-            if bitmap.is_null(i) {
-                values.push(Some(NULL))
-            } else {
-                values.push(Some(Value::deserialize(
-                    ValueRepr::Binary(column.column_type(), column.flags()),
-                    &mut *buf,
-                )?));
-            }
-        }
-
-        Ok(Self(Row { values, columns }, PhantomData))
     }
 }
